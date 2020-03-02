@@ -1,15 +1,15 @@
 const axios = require('axios');
 const TDSequential = require('tdsequential');
-const Ichimoku = require('ichimoku');
 const fs = require('fs');
 const util = require('util');
+const ichimoku = require('./ichimoku.js');
 
 const binanceApiEndpoint = 'https://api.binance.com';
 
 let candleTimeRangeMap = new Map();
 candleTimeRangeMap.set('1h', 3600000);
 
-const usingRealTimeApiData = false;
+const usingRealTimeApiData = true;
 
 const mockFileName = 'mockData.json';
 
@@ -29,11 +29,19 @@ function candleStickBuildParam(symbol, interval, startTime, endTime, limit = 500
 }
 
 function createMockData(content) {
-  fs.writeFile('./' + mockFileName, JSON.stringify({data: content}, null, 2), function (err) {
+  fs.writeFile('./' + mockFileName, JSON.stringify(content, null, 2), function (err) {
     if (err) {
       return console.log(err);
     }
   });
+}
+
+const telegramToken = '933051371:AAF4sE3732Rq4KaCJCPHn5zynOedYJPUmQo';
+
+const testChannelId = '-1001348986056';
+
+function telegramMessageRequest(channelId, text) {
+  return instance.get('https://api.telegram.org/bot' + telegramToken + '/sendMessage?chat_id=' + channelId + '&text=' + text)
 }
 
 const now = Date.now();
@@ -45,21 +53,9 @@ candleTimeRangeMap.forEach((timeRangeValue, timeRangeKey) => {
       : readFile('./' + mockFileName)
 
     dataRequest.then(response => {
-      const responseData = usingRealTimeApiData? response.data: JSON.parse(response).data
+      const responseData = usingRealTimeApiData? response.data: JSON.parse(response)
       usingRealTimeApiData ? createMockData(responseData) : {}
-      const ichimoku = new Ichimoku({
-        conversionPeriod: 9,
-        basePeriod: 26,
-        spanPeriod: 52,
-        displacement: 26,
-        values: []
-      })
       const marketInfos = responseData.map(function (marketInfoRaw) {
-        ichimoku.nextValue({
-          high: marketInfoRaw[2],
-          low: marketInfoRaw[3],
-          close: marketInfoRaw[4]
-        })
         return {
           time: marketInfoRaw[0],
           open: marketInfoRaw[1],
@@ -71,8 +67,12 @@ candleTimeRangeMap.forEach((timeRangeValue, timeRangeKey) => {
       })
 
       const tdResult = TDSequential(marketInfos);
+      const ichimokuResponse = ichimoku.ichimokuCaculator(marketInfos, roundTimeNow, timeRangeValue);
+
       console.log("TDSequential result: ", JSON.stringify(tdResult, null, 2));
-      console.log("Ichimoku result: ", JSON.stringify(ichimoku.generator));
+      console.log("Ichimoku result: ",ichimokuResponse);
+      console.log(tdResult[tdResult.length - 1].sellSetupIndex)
+      telegramMessageRequest(testChannelId, 'TDSequential notification: ' + tdResult[tdResult.length - 1].sellSetupIndex).catch(console.log)
     }).catch(err => console.log('Error: ', err));
   })
 });
