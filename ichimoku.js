@@ -1,28 +1,36 @@
 const { range } = require('lodash');
 
-function avgHighLow(marketInfos, timeget, sessions) {
+function avgHighLow(currentPrice, marketInfos, timeget, sessions) {
     const indexTimeget = marketInfos.indexOf(marketInfos.find(marketInfo => marketInfo.time === timeget))
-    if (indexTimeget - sessions < 0) return -1;
-    const subInfos = marketInfos.slice(indexTimeget - sessions, indexTimeget);
-    const highestPrice =  Math.max.apply(null, subInfos.map(marketInfo => marketInfo.high) );
-    const lowestPrice =  Math.min.apply(null, subInfos.map(marketInfo => marketInfo.low) );
+    if (indexTimeget - sessions + 2 < 0) return -1;
+    const subInfos = marketInfos.slice(indexTimeget - sessions + 2, indexTimeget);
+    const highPriceArray = subInfos.map(marketInfo => marketInfo.high)
+    if( currentPrice > 0 ) {
+        highPriceArray.push(currentPrice)
+    }
+    const lowPriceArray = subInfos.map(marketInfo => marketInfo.low)
+    if( currentPrice > 0 ) {
+        lowPriceArray.push(currentPrice)
+    }
+    const highestPrice =  Math.max.apply(null, highPriceArray );
+    const lowestPrice =  Math.min.apply(null, lowPriceArray );
     return (highestPrice + lowestPrice)/2;
 }
 
-function ichimokuCaculator(marketInfos, timeget) {
-    const tenkanSen = avgHighLow(marketInfos, timeget, 9);
-    const kijunSen = avgHighLow(marketInfos, timeget, 26);
+function ichimokuCaculator(currentPrice, marketInfos, timeget) {
+    const tenkanSen = avgHighLow(currentPrice, marketInfos, timeget, 9);
+    const kijunSen = avgHighLow(currentPrice, marketInfos, timeget, 26);
     return {
         tenkanSen: tenkanSen,
         kijunSen:  kijunSen,
         senkouSpanA:  (tenkanSen + kijunSen)/2,
-        senkouSpanB: avgHighLow(marketInfos, timeget, 52)
+        senkouSpanB: avgHighLow(currentPrice, marketInfos, timeget, 52)
     }
 }
 
-function ichimokuDynamicResistCaculator(marketInfos, timeget, timeRangeValue) {
-    const currentCacul = ichimokuCaculator(marketInfos, timeget)
-    const cacul26Before = ichimokuCaculator(marketInfos, timeget - timeRangeValue*24)
+function ichimokuDynamicResistCaculator(currentPrice, marketInfos, timeget, timeRangeValue) {
+    const currentCacul = ichimokuCaculator(currentPrice, marketInfos, timeget)
+    const cacul26Before = ichimokuCaculator(-1, marketInfos, timeget - timeRangeValue*25)
     return {
         tenkanSen: currentCacul.tenkanSen,
         kijunSen: currentCacul.kijunSen,
@@ -31,7 +39,7 @@ function ichimokuDynamicResistCaculator(marketInfos, timeget, timeRangeValue) {
     }
 }
 
-function ichimokuStaticResistCaculator(marketInfos, timeget, timeRangeValue, sessions = 100) {
+function ichimokuStaticResistCaculator(currentPrice, marketInfos, timeget, timeRangeValue, sessions = 100) {
     const tenkanSenResists = [];
     const kijunSenResists = [];
     const senkouSpanBResists = [];
@@ -50,7 +58,7 @@ function ichimokuStaticResistCaculator(marketInfos, timeget, timeRangeValue, ses
     }
     let i;
     for(i = 0; i < sessions; i ++) {
-        const checking = ichimokuCaculator(marketInfos, timeget - timeRangeValue*i)
+        const checking = ichimokuCaculator(currentPrice, marketInfos, timeget - timeRangeValue*i)
         if (checkTenkanSenResist.price === checking.tenkanSen) {
             if (checkTenkanSenResist.loopTime >= 3 && tenkanSenResists.indexOf(checkTenkanSenResist.price) === -1) {
                 tenkanSenResists.push(checkTenkanSenResist.price)
@@ -84,7 +92,7 @@ function ichimokuStaticResistCaculator(marketInfos, timeget, timeRangeValue, ses
 }
 
 function getClosestResists(currentPrice, marketInfos, timeget, timeRangeValue, sessions = 100) {
-    const resists = ichimokuStaticResistCaculator(marketInfos, timeget, timeRangeValue, sessions);
+    const resists = ichimokuStaticResistCaculator(currentPrice, marketInfos, timeget, timeRangeValue, sessions);
 
     const closestResistTenkanSen = resists.tenkanSenResists.reduce(function(prev, curr) {
         return (Math.abs(curr - currentPrice) > Math.abs(prev - currentPrice) ? curr : prev);
@@ -106,13 +114,16 @@ function getClosestResists(currentPrice, marketInfos, timeget, timeRangeValue, s
     const closestSupportSenkouSpanB = resists.senkouSpanBResists.reduce(function(prev, curr) {
         return (Math.abs(curr - currentPrice) < Math.abs(prev - currentPrice) ? curr : prev);
     });
+
+
+
     return {
-        closestResistTenkanSen: closestResistTenkanSen,
-        closestSupportTenkanSen: closestSupportTenkanSen,
-        closestResistKijunSen: closestResistKijunSen,
-        closestSupportKijunSen: closestSupportKijunSen,
-        closestResistSenkouSpanB: closestResistSenkouSpanB,
-        closestSupportSenkouSpanB: closestSupportSenkouSpanB,
+        closestResistTenkanSen: closestResistTenkanSen > currentPrice? closestResistTenkanSen: 'Không có',
+        closestSupportTenkanSen: closestSupportTenkanSen < currentPrice? closestSupportTenkanSen: 'Không có',
+        closestResistKijunSen: closestResistKijunSen > currentPrice? closestResistKijunSen: 'Không có',
+        closestSupportKijunSen: closestSupportKijunSen < currentPrice? closestSupportKijunSen: 'Không có',
+        closestResistSenkouSpanB: closestResistSenkouSpanB > currentPrice? closestResistSenkouSpanB: 'Không có',
+        closestSupportSenkouSpanB: closestSupportSenkouSpanB < currentPrice? closestSupportSenkouSpanB: 'Không có',
     }
 }
 
